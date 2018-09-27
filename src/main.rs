@@ -10,10 +10,16 @@ use std::num::Wrapping;
 fn main() {
     let key = [1,2,3,4,5,6,7,8];
     let nounce = [9,8,7];
+    let plaintext: Vec<Wrapping<u32>> = "0123456789ABCDEF".chars().map(|c| Wrapping(c as u32)).collect();    // 16 words, 4 bytes/32 bits per word
+
     let mut cc20 = ChaCha20::new(&key, &nounce, 1);
-    if let Some(n) = cc20.next() {
-        println!("{}", n);
-    }
+    cc20.scramble();
+
+    let enctext: Vec<Wrapping<u32>> = cc20.state.iter().zip(plaintext.iter()).map(|k| {
+        let (s, c) = k;
+        return s ^ c;
+    }).collect();
+    println!("text: {:?}, enc text: {:?}", plaintext, enctext);
 }
 
 struct ChaCha20 {
@@ -95,13 +101,6 @@ fn quarter_round(result: &mut [Wrapping<u32>]) {
     }
 }
 
-impl Iterator for ChaCha20 {
-    type Item = u32;
-    
-    fn next(&mut self) -> Option<Self::Item> {
-        self.scramble();
-        return Some(2);
-    }
-}
+
 
 
