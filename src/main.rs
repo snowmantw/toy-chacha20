@@ -1,6 +1,9 @@
 #![feature(slice_patterns)]     // to make passing multable slice elements possible.
 #![feature(wrapping_int_impl)]
 
+extern crate rayon;
+use rayon::prelude::*;
+
 // Wrapping for overflows during computing.
 use std::num::Wrapping;
 
@@ -32,43 +35,64 @@ impl ChaCha20 {
     }
 
     fn scramble(&mut self) {
-        for _ in 0..10 { 
-            // Vertical quarter rounds.
-            let qresult = quarter_round(self.state[0], self.state[4], self.state[8], self.state[12]);
-            self.set_state(&qresult, 0, 4, 8, 12);
+        // Vertical quarter rounds.
+        let mut result_v = [self.state[0], self.state[4], self.state[8], self.state[12]
+                           ,self.state[1], self.state[5], self.state[9], self.state[13]
+                           ,self.state[2], self.state[6], self.state[10], self.state[14]
+                           ,self.state[3], self.state[7], self.state[11], self.state[15]
+                           ];
 
-            let qresult = quarter_round(self.state[1], self.state[5], self.state[9], self.state[13]);
-            self.set_state(&qresult, 1, 5, 9, 13);
+        result_v.par_chunks_mut(4).for_each(|slot| {
+            quarter_round(slot);
+        });
 
-            let qresult = quarter_round(self.state[2], self.state[6], self.state[10], self.state[14]);
-            self.set_state(&qresult, 2, 6, 10, 14);
+        self.set_band(&result_v, 0, 4, 8, 12);
+        self.set_band(&result_v, 1, 5, 9, 13);
+        self.set_band(&result_v, 2, 6, 10, 14);
+        self.set_band(&result_v, 3, 7, 11, 15);
 
-            let qresult = quarter_round(self.state[3], self.state[7], self.state[11], self.state[15]);
-            self.set_state(&qresult, 3, 7, 11, 15);
+        let mut result_d = [self.state[0], self.state[5], self.state[10], self.state[15]
+                           ,self.state[1], self.state[6], self.state[11], self.state[12]
+                           ,self.state[2], self.state[7], self.state[8], self.state[13]
+                           ,self.state[3], self.state[4], self.state[9], self.state[14]
+                           ];
 
-            // Diagonal quarter rounds.
-            let qresult = quarter_round(self.state[0], self.state[5], self.state[10], self.state[15]);
-            self.set_state(&qresult, 0, 5, 10, 15);
+        result_d.par_chunks_mut(4).for_each(|slot| {
+            quarter_round(slot);
+        });
 
-            let qresult = quarter_round(self.state[1], self.state[6], self.state[11], self.state[12]);
-            self.set_state(&qresult, 1, 6, 11, 12);
-
-            let qresult = quarter_round(self.state[2], self.state[7], self.state[8], self.state[13]);
-            self.set_state(&qresult, 2, 7, 8, 13);
-
-            let qresult = quarter_round(self.state[3], self.state[4], self.state[9], self.state[14]);
-            self.set_state(&qresult, 3, 4, 9, 14);
-        }
+        self.set_band(&result_d, 0, 5, 10, 15);
+        self.set_band(&result_d, 1, 6, 11, 12);
+        self.set_band(&result_d, 2, 7, 8, 13);
+        self.set_band(&result_d, 3, 4, 9, 14);
     }
 
-    fn set_state(&mut self, qres: &[Wrapping<u32>], a: usize, b: usize, c: usize, d: usize) {
-        let rstate = &mut self.state;
-        rstate[a] = qres[0];
-        rstate[b] = qres[1];
-        rstate[c] = qres[2];
-        rstate[d] = qres[3];
+    fn set_band(&mut self, result: &[Wrapping<u32>], a: usize, b: usize, c: usize, d: usize) {
+        self.state[a] = result[0];
+        self.state[b] = result[1];
+        self.state[c] = result[2];
+        self.state[d] = result[3];
     }
+}
 
+fn quarter_round(result: &mut [Wrapping<u32>]) {
+    for _ in 0..10 { 
+        result[0] += result[1];
+        result[3] ^= result[0];
+        result[3] = result[3].rotate_left(16);
+
+        result[2] += result[3];
+        result[1] ^= result[2];
+        result[1] = result[1].rotate_left(12);
+
+        result[0] += result[1];
+        result[3] ^= result[0];
+        result[3] = result[3].rotate_left(8);
+
+        result[2] += result[3];
+        result[1] ^= result[2];
+        result[1] = result[1].rotate_left(7);
+    }
 }
 
 impl Iterator for ChaCha20 {
@@ -80,28 +104,4 @@ impl Iterator for ChaCha20 {
     }
 }
 
-fn quarter_round(_a: Wrapping<u32>, _b: Wrapping<u32>, _c: Wrapping<u32>, _d: Wrapping<u32>) -> [Wrapping<u32>; 4] {
-    
-    let mut a = _a.clone();
-    let mut b = _b.clone();
-    let mut c = _c.clone();
-    let mut d = _d.clone();
 
-    a += b;
-    d ^= a;
-    d = d.rotate_left(16);
-
-    c += d;
-    b ^= c;
-    b = b.rotate_left(12);
-
-    a += b;
-    d ^= a;
-    d = d.rotate_left(8);
-
-    c += d;
-    b ^= c;
-    b = b.rotate_left(7);
-
-    return [a, b, c, d];
-}
